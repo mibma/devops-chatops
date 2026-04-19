@@ -1,0 +1,136 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: docker
+    image: docker:24-dind
+    securityContext:
+      privileged: true
+  - name: kubectl
+    image: bitnami/kubectl:1.28
+    command: ['cat']
+    tty: true
+"""
+        }
+    }
+
+    environment {
+        REGISTRY = 'registry.your-company.com'
+        IMAGE_NAME = 'chatops-bot/orchestrator'
+        SLACK_WEBHOOK = credentials('slack-devops-webhook')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
+        stage('Run Tests') {
+            steps {
+                container('docker') {
+                    sh '''
+                        docker run --rm \
+                          -v $(pwd)/orchestrator:/app \
+                          -w /app \
+                          python:3.12-slim \
+                          sh -c "pip install -r requirements.txt && pytest tests/ -v --tb=short"
+                    '''
+                }
+            }
+            post {
+                failure {
+                    slackSend(
+                        color: 'danger',
+                        message: ":x: ChatOps Bot tests FAILED on `${env.BRANCH_NAME}` — <${env.BUILD_URL}|View>",
+                        webhookSecret: SLACK_WEBHOOK
+                    )
+                }
+            }
+        }
+
+        stage('Build & Push Docker Image') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'release/*'
+                }
+            }
+            steps {
+                container('docker') {
+                    script {
+                        def imageTag = "${env.GIT_COMMIT[0..7]}-${env.BUILD_NUMBER}"
+                        sh """
+                            docker build -t ${REGISTRY}/${IMAGE_NAME}:${imageTag} ./orchestrator
+                            docker tag ${REGISTRY}/${IMAGE_NAME}:${imageTag} ${REGISTRY}/${IMAGE_NAME}:latest
+                            docker push ${REGISTRY}/${IMAGE_NAME}:${imageTag}
+                            docker push ${REGISTRY}/${IMAGE_NAME}:latest
+                        """
+                        env.IMAGE_TAG = imageTag
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            when { branch 'main' }
+            steps {
+                container('kubectl') {
+                    sh """
+                        kubectl set image deployment/chatops-orchestrator \
+                          orchestrator=${REGISTRY}/${IMAGE_NAME}:${env.IMAGE_TAG} \
+                          -n devops-tools
+                        kubectl rollout status deployment/chatops-orchestrator \
+                          -n devops-tools --timeout=120s
+                    """
+                }
+            }
+        }
+
+        stage('Integration Tests Against Staging') {
+            when { branch 'main' }
+            steps { sh 'make integration-test ENVIRONMENT=staging' }
+        }
+
+        stage('Await Production Approval') {
+            when { branch 'main' }
+            steps {
+                slackSend(
+                    color: 'warning',
+                    message: ":hourglass: ChatOps Bot v${env.IMAGE_TAG} ready for production.",
+                    webhookSecret: SLACK_WEBHOOK
+                )
+                timeout(time: 30, unit: 'MINUTES') {
+                    input message: 'Approve production deployment?', ok: 'Deploy to Production'
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            when { branch 'main' }
+            steps {
+                container('kubectl') {
+                    sh """
+                        kubectl set image deployment/chatops-orchestrator \
+                          orchestrator=${REGISTRY}/${IMAGE_NAME}:${env.IMAGE_TAG} \
+                          -n devops-tools-prod
+                        kubectl rollout status deployment/chatops-orchestrator \
+                          -n devops-tools-prod --timeout=120s
+                    """
+                }
+            }
+            post {
+                success {
+                    slackSend(
+                        color: 'good',
+                        message: ":white_check_mark: ChatOps Bot v${env.IMAGE_TAG} deployed to production.",
+                        webhookSecret: SLACK_WEBHOOK
+                    )
+                }
+            }
+        }
+    }
+}

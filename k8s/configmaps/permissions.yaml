@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chatops-permissions
+  namespace: devops-tools
+data:
+  permissions.yaml: |
+    permissions:
+      developer:
+        allowed_actions:
+          - BUILD
+          - STATUS
+          - LOGS
+          - HELP
+        allowed_environments:
+          - development
+          - staging
+
+      devops-lead:
+        allowed_actions:
+          - BUILD
+          - DEPLOY
+          - STATUS
+          - LOGS
+          - RESTART
+          - SCALE
+          - HELP
+        allowed_environments:
+          - development
+          - staging
+          - production
+        requires_approval:
+          - action: ROLLBACK
+            environment: production
+
+      sre-on-call:
+        allowed_actions: ["*"]
+        allowed_environments: ["*"]
+
+    approval_channels:
+      production_deployments: "#deployments-prod"
+      rollbacks: "#sre-incidents"
+
+    approval_timeout_minutes: 15

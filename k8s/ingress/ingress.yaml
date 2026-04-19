@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chatops-ingress
+  namespace: devops-tools
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - chatops.your-company.com
+      secretName: chatops-tls
+  rules:
+    - host: chatops.your-company.com
+      http:
+        paths:
+          - path: /slack
+            pathType: Prefix
+            backend:
+              service:
+                name: slack-gateway-svc
+                port:
+                  number: 3000
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: orchestrator-svc
+                port:
+                  number: 8000

@@ -1,0 +1,62 @@
+version: '3.9'
+
+services:
+  slack-gateway:
+    build: ./slack-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
+      ORCHESTRATOR_URL: http://orchestrator:8000
+    depends_on:
+      - orchestrator
+
+  orchestrator:
+    build: ./orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://chatops:password@postgres:5432/chatops
+      REDIS_URL: redis://redis:6379/0
+      JENKINS_URL: ${JENKINS_URL}
+      JENKINS_USER: ${JENKINS_USER}
+      JENKINS_TOKEN: ${JENKINS_TOKEN}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      KUBECONFIG: /kube/config
+      PERMISSIONS_FILE: /app/config/permissions.yaml
+    volumes:
+      - ~/.kube:/kube:ro
+      - ./config:/app/config:ro
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: chatops
+      POSTGRES_USER: chatops
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
