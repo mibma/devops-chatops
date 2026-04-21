@@ -2,8 +2,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql://chatops:password@postgres:5432/chatops"
-    redis_url: str = "redis://redis:6379/0"
+    database_url: str = "postgresql://chatops:password@localhost:5432/chatops"
+    redis_url: str = "redis://localhost:6379/0"
 
     jenkins_url: str = "http://jenkins.your-company.com"
     jenkins_user: str = "chatops-bot"

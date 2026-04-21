@@ -71,8 +71,24 @@ def _build_k8s() -> KubernetesAdapter | None:
 async def lifespan(app: FastAPI):
     postgres = Postgres(settings.database_url)
     redis_client = RedisClient(settings.redis_url)
-    await postgres.connect()
-    await redis_client.connect()
+
+    try:
+        await postgres.connect()
+        log.info("postgres connected")
+    except Exception:  # noqa: BLE001
+        log.warning(
+            "postgres unavailable — audit/role features disabled. "
+            "Start postgres or set DATABASE_URL to a running instance."
+        )
+
+    try:
+        await redis_client.connect()
+        log.info("redis connected")
+    except Exception:  # noqa: BLE001
+        log.warning(
+            "redis unavailable — rate-limiting and dedup disabled. "
+            "Start redis or set REDIS_URL to a running instance."
+        )
 
     parser = CommandParser()
     permissions = PermissionChecker(settings.permissions_file)

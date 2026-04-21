@@ -20,11 +20,17 @@ class Postgres:
             await self._pool.close()
 
     @property
+    def available(self) -> bool:
+        return self._pool is not None
+
+    @property
     def pool(self) -> asyncpg.Pool:
         assert self._pool is not None, "Postgres pool not initialized"
         return self._pool
 
     async def get_user_roles(self, slack_user_id: str) -> list[str]:
+        if not self.available:
+            return []
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT roles FROM user_roles WHERE slack_user_id = $1",
@@ -50,6 +56,8 @@ class Postgres:
             )
 
     async def write_audit(self, entry: AuditEntry) -> None:
+        if not self.available:
+            return
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
@@ -83,6 +91,8 @@ class Postgres:
         action: str,
         payload: dict,
     ) -> None:
+        if not self.available:
+            return
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
@@ -98,6 +108,8 @@ class Postgres:
         status: str,
         approved_by: Optional[str] = None,
     ) -> None:
+        if not self.available:
+            return
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
@@ -112,6 +124,8 @@ class Postgres:
             )
 
     async def get_pending_operation(self, tracking_id: UUID) -> Optional[dict]:
+        if not self.available:
+            return None
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM pending_operations WHERE tracking_id = $1",
