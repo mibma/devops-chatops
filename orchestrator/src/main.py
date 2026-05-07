@@ -8,6 +8,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
 from .adapters.docker_adapter import DockerAdapter
+from .adapters.ec2_adapter import EC2Adapter
 from .adapters.jenkins_adapter import JenkinsAdapter
 from .adapters.kubernetes_adapter import KubernetesAdapter
 from .config import settings
@@ -67,6 +68,24 @@ def _build_k8s() -> KubernetesAdapter | None:
         return None
 
 
+def _build_ec2() -> EC2Adapter | None:
+    if not (settings.ec2_http_url or settings.ec2_instance_id or settings.ec2_ssh_host):
+        log.info("EC2 adapter not configured (no EC2_HTTP_URL / EC2_INSTANCE_ID / EC2_SSH_HOST)")
+        return None
+    return EC2Adapter(
+        target_name=settings.ec2_target_name,
+        http_url=settings.ec2_http_url or None,
+        instance_id=settings.ec2_instance_id or None,
+        aws_region=settings.aws_region or None,
+        aws_access_key_id=settings.aws_access_key_id or None,
+        aws_secret_access_key=settings.aws_secret_access_key or None,
+        ssh_host=settings.ec2_ssh_host or None,
+        ssh_user=settings.ec2_ssh_user or None,
+        ssh_key_path=settings.ec2_ssh_key_path or None,
+        service_name=settings.ec2_service_name,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     postgres = Postgres(settings.database_url)
@@ -97,6 +116,7 @@ async def lifespan(app: FastAPI):
     jenkins = _build_jenkins()
     docker_ = _build_docker()
     k8s = _build_k8s()
+    ec2 = _build_ec2()
 
     app.state.orch = Orchestrator(
         parser=parser,
@@ -107,6 +127,7 @@ async def lifespan(app: FastAPI):
         jenkins=jenkins,
         docker=docker_,
         k8s=k8s,
+        ec2=ec2,
     )
     app.state.redis = redis_client
 

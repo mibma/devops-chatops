@@ -31,7 +31,11 @@ class PermissionChecker:
 
     def evaluate(self, intent: CommandIntent, roles: list[str]) -> PermissionDecision:
         if not roles:
-            return PermissionDecision(False, reason="User has no assigned roles")
+            default_roles = self._matrix.get("default_roles") or []
+            if default_roles:
+                roles = list(default_roles)
+            else:
+                return PermissionDecision(False, reason="User has no assigned roles")
 
         perms = self._matrix.get("permissions", {})
         action_str = intent.action.value

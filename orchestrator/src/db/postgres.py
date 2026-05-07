@@ -114,9 +114,9 @@ class Postgres:
             await conn.execute(
                 """
                 UPDATE pending_operations
-                   SET status = $2,
+                   SET status = $2::varchar,
                        approved_by = COALESCE($3, approved_by),
-                       completed_at = CASE WHEN $2 IN ('COMPLETE','FAILED','EXPIRED')
+                       completed_at = CASE WHEN $2::varchar IN ('COMPLETE','FAILED','EXPIRED')
                                            THEN NOW() ELSE completed_at END
                  WHERE tracking_id = $1
                 """,

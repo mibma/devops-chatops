@@ -6,6 +6,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from ..adapters.docker_adapter import DockerAdapter
+from ..adapters.ec2_adapter import EC2Adapter
 from ..adapters.jenkins_adapter import JenkinsAdapter
 from ..adapters.kubernetes_adapter import KubernetesAdapter
 from ..db.postgres import Postgres
@@ -36,6 +37,7 @@ class Orchestrator:
         jenkins: JenkinsAdapter | None,
         docker: DockerAdapter | None,
         k8s: KubernetesAdapter | None,
+        ec2: EC2Adapter | None = None,
     ):
         self.parser = parser
         self.permissions = permissions
@@ -45,6 +47,7 @@ class Orchestrator:
         self.jenkins = jenkins
         self.docker = docker
         self.k8s = k8s
+        self.ec2 = ec2
 
     async def execute(
         self,
@@ -167,7 +170,18 @@ class Orchestrator:
             return rollout.status
 
         if action == Action.STATUS:
-            assert self.k8s, "Kubernetes adapter not configured"
+            ec2_targets = {"ec2", "hello-cicd", "server", None, ""}
+            use_ec2 = self.ec2 is not None and (
+                intent.service in ec2_targets or self.k8s is None
+            )
+            if use_ec2:
+                report = await self.ec2.get_health()
+                await self.slack.post_ec2_status_card(intent.channel_id, report)
+                return (
+                    f"ec2:{report.instance_state or 'unknown'}"
+                    f" http:{report.http_status or 'n/a'}"
+                )
+            assert self.k8s, "No status adapter configured (set EC2_HTTP_URL or KUBECONFIG)"
             namespace = intent.namespace or intent.environment or "default"
             status = await self.k8s.get_deployment_status(intent.service or "", namespace)
             await self.slack.post_status_card(intent.channel_id, status)

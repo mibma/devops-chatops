@@ -74,9 +74,12 @@ function registerCommand(slashName, action) {
       }
 
       const result = await forwardToOrchestrator(action, command);
+      const ackText = action === 'STATUS'
+        ? `:mag: Checking ${action.toLowerCase()}... (tracking \`${result.tracking_id}\`) — full report will be posted in this channel.`
+        : `:rocket: ${action} request received. Tracking ID: \`${result.tracking_id}\``;
       await respond({
         response_type: 'in_channel',
-        text: `:rocket: ${action} request received. Tracking ID: \`${result.tracking_id}\``,
+        text: ackText,
       });
     } catch (err) {
       await respond({
@@ -89,7 +92,7 @@ function registerCommand(slashName, action) {
 
 registerCommand('/deploy', 'DEPLOY');
 registerCommand('/build', 'BUILD');
-registerCommand('/status', 'STATUS');
+registerCommand('/status-check', 'STATUS');
 registerCommand('/rollback', 'ROLLBACK');
 registerCommand('/logs', 'LOGS');
 registerCommand('/restart', 'RESTART');

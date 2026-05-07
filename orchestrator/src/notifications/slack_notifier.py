@@ -4,6 +4,7 @@ from uuid import UUID
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.errors import SlackApiError
 
+from ..adapters.ec2_adapter import EC2HealthReport
 from ..models.intents import CommandIntent
 from ..models.results import DeploymentStatus, RolloutStatus
 
@@ -95,3 +96,36 @@ class SlackNotifier:
     async def post_logs(self, channel: str, pod_name: str, logs: str) -> None:
         snippet = logs[-2800:] if len(logs) > 2800 else logs
         await self.post_text(channel, f":scroll: Logs for `{pod_name}`:\n```\n{snippet}\n```")
+
+    async def post_ec2_status_card(self, channel: str, report: EC2HealthReport) -> None:
+        emoji = ":large_green_circle:" if report.healthy else ":red_circle:"
+        lines = [f"{emoji} *Status: {report.target}*"]
+
+        if report.instance_id:
+            lines.append(
+                f"• EC2 `{report.instance_id}` — state: *{report.instance_state or 'n/a'}*, "
+                f"instance-check: *{report.instance_status or 'n/a'}*, "
+                f"system-check: *{report.system_status or 'n/a'}*"
+            )
+        if report.public_dns or report.public_ip:
+            lines.append(
+                f"• Address: `{report.public_dns or report.public_ip}`"
+            )
+        if report.http_url:
+            if report.http_status is not None:
+                lines.append(
+                    f"• HTTP `{report.http_url}` → *{report.http_status}* "
+                    f"in {report.http_latency_ms} ms"
+                )
+            else:
+                lines.append(
+                    f"• HTTP `{report.http_url}` → unreachable "
+                    f"({report.http_error or 'no response'})"
+                )
+        if report.ssh_checks:
+            ssh_lines = "\n".join(f"  - {k}: `{v}`" for k, v in report.ssh_checks.items())
+            lines.append(f"• Server checks:\n{ssh_lines}")
+        if report.errors:
+            lines.append(":warning: " + "; ".join(report.errors))
+
+        await self.post_text(channel, "\n".join(lines))

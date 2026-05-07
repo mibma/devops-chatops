@@ -13,3 +13,5 @@ build/
 *.log
 .DS_Store
 k8s/secrets/secrets.yaml
+keys/*
+!keys/.gitkeep
