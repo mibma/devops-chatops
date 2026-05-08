@@ -23,7 +23,7 @@ spec:
       serviceAccountName: chatops-bot
       containers:
         - name: orchestrator
-          image: registry.your-company.com/chatops-bot/orchestrator:latest
+          image: ACCOUNT_ID.dkr.ecr.ap-southeast-2.amazonaws.com/chatops/orchestrator:latest
           ports:
             - containerPort: 8000
           resources:
@@ -68,6 +68,60 @@ spec:
                 secretKeyRef:
                   name: chatops-secrets
                   key: slack-bot-token
+            - name: EC2_TARGET_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: chatops-secrets
+                  key: ec2-target-name
+            - name: EC2_HTTP_URL
+              valueFrom:
+                secretKeyRef:
+                  name: chatops-secrets
+                  key: ec2-http-url
+            - name: EC2_INSTANCE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: chatops-secrets
+                  key: ec2-instance-id
+            - name: AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: chatops-secrets
+                  key: aws-region
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: chatops-secrets
+                  key: aws-access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: chatops-secrets
+                  key: aws-secret-access-key
+            - name: EC2_SSH_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: chatops-secrets
+                  key: ec2-ssh-host
+            - name: EC2_SSH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: chatops-secrets
+                  key: ec2-ssh-user
+            - name: EC2_SSH_KEY_PATH
+              value: "/app/keys/ec2.pem"
+            - name: EC2_SERVICE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: chatops-secrets
+                  key: ec2-service-name
+          volumeMounts:
+            - name: permissions-config
+              mountPath: /app/config
+              readOnly: true
+            - name: ec2-ssh-key
+              mountPath: /app/keys
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /ready
@@ -80,11 +134,11 @@ spec:
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 10
-          volumeMounts:
-            - name: permissions-config
-              mountPath: /app/config
-              readOnly: true
       volumes:
         - name: permissions-config
           configMap:
             name: chatops-permissions
+        - name: ec2-ssh-key
+          secret:
+            secretName: chatops-ec2-key
+            defaultMode: 0400
