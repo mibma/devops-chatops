@@ -244,7 +244,7 @@ class EC2Adapter:
                 else:
                     git_out = self._run(
                         client,
-                        f"git -C {self.app_dir} fetch --all 2>&1 && git -C {self.app_dir} checkout {version} 2>&1",
+                        f"git -C {self.app_dir} fetch --all --tags 2>&1 && git -C {self.app_dir} checkout -f {version} 2>&1",
                         timeout=30,
                     )
             restart_out = self._run(
@@ -283,8 +283,8 @@ class EC2Adapter:
         client = self._connect_ssh(timeout=15)
         try:
             if version:
-                self._run(client, f"git -C {self.app_dir} fetch --all 2>&1", timeout=20)
-                out = self._run(client, f"git -C {self.app_dir} checkout {version} 2>&1", timeout=15)
+                self._run(client, f"git -C {self.app_dir} fetch --all --tags 2>&1", timeout=20)
+                out = self._run(client, f"git -C {self.app_dir} checkout -f {version} 2>&1", timeout=15)
                 self._run(client, f"sudo systemctl restart {self.service_name} 2>&1", timeout=15)
                 return f":rewind: Rolled back `{self.target_name}` → `{version}` by <@{requester}>\n```{out[:200]}```"
 
