@@ -230,30 +230,40 @@ class EC2Adapter:
     def _deploy_sync(self, version: str, requester: str) -> str:
         client = self._connect_ssh(timeout=15)
         try:
-            has_git = self._run(
+            # Verify git repo exists at app_dir
+            is_git = self._run(
                 client,
-                f"git -C {self.app_dir} rev-parse --is-inside-work-tree 2>/dev/null && echo yes || echo no",
+                f"git -C {self.app_dir} rev-parse --is-inside-work-tree 2>&1",
                 timeout=10,
             )
-            git_out = ""
-            if has_git.strip() == "yes":
-                if version in ("latest", "main", "master", ""):
-                    git_out = self._run(
-                        client, f"git -C {self.app_dir} pull origin main 2>&1", timeout=30,
-                    )
-                else:
-                    git_out = self._run(
-                        client,
-                        f"git -C {self.app_dir} fetch --all --tags 2>&1 && git -C {self.app_dir} checkout -f {version} 2>&1",
-                        timeout=30,
-                    )
-            restart_out = self._run(
-                client, f"sudo systemctl restart {self.service_name} 2>&1", timeout=15,
+            if "true" not in is_git:
+                raise RuntimeError(
+                    f"No git repo at `{self.app_dir}` on remote server. "
+                    f"Clone your repo there first, then set EC2_APP_DIR in .env."
+                )
+
+            # Always fetch latest commits and tags from GitHub
+            self._run(client, f"git -C {self.app_dir} fetch --all --tags 2>&1", timeout=30)
+
+            if version in ("latest", "main", "master", ""):
+                git_out = self._run(
+                    client, f"git -C {self.app_dir} pull origin main 2>&1", timeout=30,
+                )
+            else:
+                git_out = self._run(
+                    client, f"git -C {self.app_dir} checkout -f {version} 2>&1", timeout=15,
+                )
+
+            current = self._run(
+                client,
+                f"git -C {self.app_dir} describe --tags --always 2>/dev/null",
+                timeout=5,
             )
-            lines = [f":rocket: Deployed `{self.target_name}` → `{version}` by <@{requester}>"]
+            self._run(client, f"sudo systemctl restart {self.service_name} 2>&1", timeout=15)
+
+            lines = [f":rocket: Deployed `{self.target_name}` → `{current or version}` by <@{requester}>"]
             if git_out:
                 lines.append(f"```{git_out[:300]}```")
-            lines.append(f"`{self.service_name}` restarted: `{restart_out or 'ok'}`")
             return "\n".join(lines)
         finally:
             client.close()
