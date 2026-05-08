@@ -160,6 +160,14 @@ class Orchestrator:
             return f"queued:{result.queue_item}"
 
         if action == Action.DEPLOY:
+            ec2_targets = {"ec2", "hello-cicd", "server", None, ""}
+            use_ec2 = self.ec2 is not None and (
+                intent.service in ec2_targets or self.k8s is None
+            )
+            if use_ec2:
+                msg = await self.ec2.deploy(intent.version or "latest", intent.requester_id)
+                await self.slack.post_text(intent.channel_id, msg)
+                return f"ec2-deploy:{intent.version or 'latest'}"
             assert self.k8s, "Kubernetes adapter not configured"
             namespace = intent.namespace or intent.environment or "default"
             image = f"{intent.service}:{intent.version or 'latest'}"
@@ -188,6 +196,14 @@ class Orchestrator:
             return f"ready:{status.ready_replicas}/{status.desired_replicas}"
 
         if action == Action.ROLLBACK:
+            ec2_targets = {"ec2", "hello-cicd", "server", None, ""}
+            use_ec2 = self.ec2 is not None and (
+                intent.service in ec2_targets or self.k8s is None
+            )
+            if use_ec2:
+                msg = await self.ec2.rollback(intent.requester_id)
+                await self.slack.post_text(intent.channel_id, msg)
+                return msg
             assert self.k8s, "Kubernetes adapter not configured"
             namespace = intent.namespace or intent.environment or "default"
             msg = await self.k8s.rollback_deployment(
@@ -197,6 +213,15 @@ class Orchestrator:
             return msg
 
         if action == Action.LOGS:
+            ec2_targets = {"ec2", "hello-cicd", "server", None, ""}
+            use_ec2 = self.ec2 is not None and (
+                intent.service in ec2_targets or self.k8s is None
+            )
+            if use_ec2:
+                svc = intent.service or self.ec2.service_name
+                logs = await self.ec2.get_logs(svc)
+                await self.slack.post_logs(intent.channel_id, svc, logs)
+                return f"ec2-logs:{svc}"
             assert self.k8s, "Kubernetes adapter not configured"
             namespace = intent.namespace or intent.environment or "default"
             pods = await self.k8s.get_pod_list(namespace, f"app={intent.service}")

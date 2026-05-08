@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     ec2_ssh_user: str = ""
     ec2_ssh_key_path: str = ""
     ec2_service_name: str = "nginx"
+    ec2_app_dir: str = "~/app"
 
     class Config:
         env_file = str(_PROJECT_ROOT_ENV)

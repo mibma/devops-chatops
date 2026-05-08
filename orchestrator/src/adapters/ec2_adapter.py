@@ -67,6 +67,7 @@ class EC2Adapter:
         ssh_user: Optional[str] = None,
         ssh_key_path: Optional[str] = None,
         service_name: Optional[str] = None,
+        app_dir: str = "~/app",
     ):
         self.target_name = target_name
         self.http_url = http_url
@@ -78,6 +79,7 @@ class EC2Adapter:
         self.ssh_user = ssh_user
         self.ssh_key_path = ssh_key_path
         self.service_name = service_name or "nginx"
+        self.app_dir = app_dir
 
     async def get_health(self) -> EC2HealthReport:
         report = EC2HealthReport(target=self.target_name)
@@ -192,9 +194,94 @@ class EC2Adapter:
             client.close()
         return checks
 
+    def _connect_ssh(self, timeout: int = 10):
+        try:
+            import paramiko
+        except ImportError as exc:
+            raise RuntimeError("paramiko not installed") from exc
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(
+            hostname=self.ssh_host,
+            username=self.ssh_user,
+            key_filename=self.ssh_key_path,
+            timeout=timeout,
+            banner_timeout=timeout,
+            auth_timeout=timeout,
+        )
+        return client
+
     @staticmethod
-    def _run(client, cmd: str) -> str:
-        _, stdout, stderr = client.exec_command(cmd, timeout=5)
+    def _run(client, cmd: str, timeout: int = 5) -> str:
+        _, stdout, stderr = client.exec_command(cmd, timeout=timeout)
         out = stdout.read().decode("utf-8", errors="replace").strip()
         err = stderr.read().decode("utf-8", errors="replace").strip()
         return out or err or ""
+
+    # ------------------------------------------------------------------ #
+    #  Mutating operations via SSH                                         #
+    # ------------------------------------------------------------------ #
+
+    async def deploy(self, version: str, requester: str) -> str:
+        if not (self.ssh_host and self.ssh_user and self.ssh_key_path):
+            raise RuntimeError("SSH not configured — set EC2_SSH_HOST, EC2_SSH_USER, EC2_SSH_KEY_PATH")
+        return await asyncio.to_thread(self._deploy_sync, version, requester)
+
+    def _deploy_sync(self, version: str, requester: str) -> str:
+        client = self._connect_ssh(timeout=15)
+        try:
+            has_git = self._run(
+                client,
+                f"git -C {self.app_dir} rev-parse --is-inside-work-tree 2>/dev/null && echo yes || echo no",
+                timeout=10,
+            )
+            pull_out = ""
+            if has_git.strip() == "yes":
+                pull_out = self._run(client, f"git -C {self.app_dir} pull origin main 2>&1", timeout=30)
+            restart_out = self._run(
+                client, f"sudo systemctl restart {self.service_name} 2>&1", timeout=15,
+            )
+            lines = [f":rocket: Deployed `{self.target_name}` (v`{version}`) by <@{requester}>"]
+            if pull_out:
+                lines.append(f"```{pull_out[:300]}```")
+            lines.append(f"Service restart: `{restart_out or 'ok'}`")
+            return "\n".join(lines)
+        finally:
+            client.close()
+
+    async def get_logs(self, service: str, lines: int = 50) -> str:
+        if not (self.ssh_host and self.ssh_user and self.ssh_key_path):
+            raise RuntimeError("SSH not configured — set EC2_SSH_HOST, EC2_SSH_USER, EC2_SSH_KEY_PATH")
+        return await asyncio.to_thread(self._logs_sync, service, lines)
+
+    def _logs_sync(self, service: str, lines: int) -> str:
+        client = self._connect_ssh(timeout=10)
+        try:
+            return self._run(
+                client,
+                f"sudo journalctl -u {self.service_name} --no-pager -n {lines} 2>&1",
+                timeout=15,
+            )
+        finally:
+            client.close()
+
+    async def rollback(self, requester: str) -> str:
+        if not (self.ssh_host and self.ssh_user and self.ssh_key_path):
+            raise RuntimeError("SSH not configured — set EC2_SSH_HOST, EC2_SSH_USER, EC2_SSH_KEY_PATH")
+        return await asyncio.to_thread(self._rollback_sync, requester)
+
+    def _rollback_sync(self, requester: str) -> str:
+        client = self._connect_ssh(timeout=15)
+        try:
+            prev = self._run(
+                client,
+                f"git -C {self.app_dir} log --format='%H' 2>/dev/null | sed -n '2p'",
+                timeout=10,
+            )
+            if not prev or len(prev) < 7:
+                return ":warning: No previous git commit found — cannot rollback"
+            self._run(client, f"git -C {self.app_dir} checkout {prev} 2>&1", timeout=20)
+            self._run(client, f"sudo systemctl restart {self.service_name} 2>&1", timeout=15)
+            return f":rewind: Rolled back `{self.target_name}` to `{prev[:8]}` by <@{requester}>"
+        finally:
+            client.close()

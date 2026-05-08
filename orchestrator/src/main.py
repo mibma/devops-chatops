@@ -83,6 +83,7 @@ def _build_ec2() -> EC2Adapter | None:
         ssh_user=settings.ec2_ssh_user or None,
         ssh_key_path=settings.ec2_ssh_key_path or None,
         service_name=settings.ec2_service_name,
+        app_dir=settings.ec2_app_dir,
     )
 
 
