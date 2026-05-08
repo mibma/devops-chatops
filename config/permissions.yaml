@@ -5,12 +5,15 @@ permissions:
   developer:
     allowed_actions:
       - BUILD
+      - DEPLOY
       - STATUS
       - LOGS
+      - ROLLBACK
       - HELP
     allowed_environments:
       - development
       - staging
+      - production
 
   devops-lead:
     allowed_actions:
