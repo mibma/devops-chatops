@@ -26,7 +26,7 @@ services:
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
       KUBECONFIG: /kube/config
       PERMISSIONS_FILE: /app/config/permissions.yaml
-      EC2_TARGET_NAME: ${EC2_TARGET_NAME:-hello-cicd}
+      EC2_TARGET_NAME: ${EC2_TARGET_NAME:-demo-devops-project}
       EC2_HTTP_URL: ${EC2_HTTP_URL:-}
       EC2_INSTANCE_ID: ${EC2_INSTANCE_ID:-}
       AWS_REGION: ${AWS_REGION:-}

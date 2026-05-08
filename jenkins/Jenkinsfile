@@ -1,136 +1,137 @@
 pipeline {
-    agent {
-        kubernetes {
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: docker
-    image: docker:24-dind
-    securityContext:
-      privileged: true
-  - name: kubectl
-    image: bitnami/kubectl:1.28
-    command: ['cat']
-    tty: true
-"""
-        }
+    agent any
+
+    parameters {
+        string(name: 'VERSION',      defaultValue: 'latest',
+               description: 'Git tag or branch to deploy (e.g. v1.2, main, latest)')
+        string(name: 'TRIGGERED_BY', defaultValue: '',
+               description: 'Slack user ID who triggered this build')
     }
 
     environment {
-        REGISTRY = 'registry.your-company.com'
-        IMAGE_NAME = 'chatops-bot/orchestrator'
-        SLACK_WEBHOOK = credentials('slack-devops-webhook')
+        REPO_URL = 'https://github.com/kisa-fatima/demo-devops-project.git'
+        EC3_USER = 'ubuntu'
+        EC3_HOST = '3.25.234.220'
+        EC3_APP  = '/home/ubuntu/demo-devops-project'
     }
 
     stages {
+
         stage('Checkout') {
-            steps { checkout scm }
-        }
-
-        stage('Run Tests') {
             steps {
-                container('docker') {
-                    sh '''
-                        docker run --rm \
-                          -v $(pwd)/orchestrator:/app \
-                          -w /app \
-                          python:3.12-slim \
-                          sh -c "pip install -r requirements.txt && pytest tests/ -v --tb=short"
-                    '''
-                }
-            }
-            post {
-                failure {
-                    slackSend(
-                        color: 'danger',
-                        message: ":x: ChatOps Bot tests FAILED on `${env.BRANCH_NAME}` — <${env.BUILD_URL}|View>",
-                        webhookSecret: SLACK_WEBHOOK
-                    )
-                }
+                git url: "${env.REPO_URL}", branch: 'main'
             }
         }
 
-        stage('Build & Push Docker Image') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'release/*'
-                }
-            }
+        stage('Setup Linters') {
             steps {
-                container('docker') {
+                writeFile file: 'package.json', text: '''{
+  "name": "demo-devops-project",
+  "private": true,
+  "devDependencies": {
+    "html-validate": "^9.3.0",
+    "eslint": "^8.57.0",
+    "stylelint": "^16.3.0",
+    "stylelint-config-standard": "^36.0.0"
+  }
+}'''
+                writeFile file: '.eslintrc.json', text: '''{
+  "env": { "browser": true, "es2021": true },
+  "extends": ["eslint:recommended"],
+  "parserOptions": { "ecmaVersion": 2021 },
+  "rules": { "no-unused-vars": "warn", "no-console": "off" }
+}'''
+                writeFile file: '.htmlvalidate.json', text: '''{
+  "extends": ["html-validate:recommended"],
+  "rules": {
+    "no-trailing-whitespace": "off",
+    "attr-quotes": "off",
+    "void-style": "off"
+  }
+}'''
+                writeFile file: '.stylelintrc.json', text: '''{
+  "extends": ["stylelint-config-standard"],
+  "rules": {
+    "no-descending-specificity": null,
+    "color-function-notation": null,
+    "alpha-value-notation": null
+  }
+}'''
+                sh 'npm install'
+            }
+        }
+
+        stage('HTML Validate') {
+            steps {
+                sh 'npx html-validate index.html'
+            }
+        }
+
+        stage('JS Lint') {
+            steps {
+                sh 'npx eslint script.js'
+            }
+        }
+
+        stage('CSS Lint') {
+            steps {
+                sh 'npx stylelint styles.css'
+            }
+        }
+
+        stage('Deploy to EC2') {
+            steps {
+                sshagent(credentials: ['ec3-deploy-key']) {
                     script {
-                        def imageTag = "${env.GIT_COMMIT[0..7]}-${env.BUILD_NUMBER}"
+                        def ver = params.VERSION ?: 'latest'
+                        def gitCmd = (ver == 'latest' || ver == 'main')
+                            ? "git -C ${env.EC3_APP} pull origin main"
+                            : "git -C ${env.EC3_APP} checkout -f ${ver}"
                         sh """
-                            docker build -t ${REGISTRY}/${IMAGE_NAME}:${imageTag} ./orchestrator
-                            docker tag ${REGISTRY}/${IMAGE_NAME}:${imageTag} ${REGISTRY}/${IMAGE_NAME}:latest
-                            docker push ${REGISTRY}/${IMAGE_NAME}:${imageTag}
-                            docker push ${REGISTRY}/${IMAGE_NAME}:latest
+                            ssh -o StrictHostKeyChecking=no ${env.EC3_USER}@${env.EC3_HOST} \
+                                'git -C ${env.EC3_APP} fetch --all --tags && ${gitCmd} && sudo systemctl reload nginx'
                         """
-                        env.IMAGE_TAG = imageTag
                     }
                 }
             }
         }
 
-        stage('Deploy to Staging') {
-            when { branch 'main' }
+        stage('Smoke Test') {
             steps {
-                container('kubectl') {
-                    sh """
-                        kubectl set image deployment/chatops-orchestrator \
-                          orchestrator=${REGISTRY}/${IMAGE_NAME}:${env.IMAGE_TAG} \
-                          -n devops-tools
-                        kubectl rollout status deployment/chatops-orchestrator \
-                          -n devops-tools --timeout=120s
-                    """
-                }
+                sh """
+                    STATUS=\$(curl -s -o /dev/null -w '%{http_code}' http://${env.EC3_HOST}/)
+                    [ "\$STATUS" = "200" ] || { echo "Smoke test FAILED — HTTP \$STATUS"; exit 1; }
+                    echo "Smoke test PASSED — HTTP \$STATUS"
+                """
             }
         }
+    }
 
-        stage('Integration Tests Against Staging') {
-            when { branch 'main' }
-            steps { sh 'make integration-test ENVIRONMENT=staging' }
-        }
+    post {
+        success { script { _notifySlack(':white_check_mark:', 'PASSED') } }
+        failure  { script { _notifySlack(':x:', 'FAILED') } }
+    }
+}
 
-        stage('Await Production Approval') {
-            when { branch 'main' }
-            steps {
-                slackSend(
-                    color: 'warning',
-                    message: ":hourglass: ChatOps Bot v${env.IMAGE_TAG} ready for production.",
-                    webhookSecret: SLACK_WEBHOOK
-                )
-                timeout(time: 30, unit: 'MINUTES') {
-                    input message: 'Approve production deployment?', ok: 'Deploy to Production'
-                }
-            }
-        }
-
-        stage('Deploy to Production') {
-            when { branch 'main' }
-            steps {
-                container('kubectl') {
-                    sh """
-                        kubectl set image deployment/chatops-orchestrator \
-                          orchestrator=${REGISTRY}/${IMAGE_NAME}:${env.IMAGE_TAG} \
-                          -n devops-tools-prod
-                        kubectl rollout status deployment/chatops-orchestrator \
-                          -n devops-tools-prod --timeout=120s
-                    """
-                }
-            }
-            post {
-                success {
-                    slackSend(
-                        color: 'good',
-                        message: ":white_check_mark: ChatOps Bot v${env.IMAGE_TAG} deployed to production.",
-                        webhookSecret: SLACK_WEBHOOK
-                    )
-                }
-            }
+def _notifySlack(String icon, String status) {
+    def msg = "${icon} *${env.JOB_NAME}* #${env.BUILD_NUMBER} — ${status}\n" +
+              "Version: \`${params.VERSION ?: 'latest'}\`  |  <${env.BUILD_URL}|View build>"
+    withCredentials([string(credentialsId: 'slack-bot-token', variable: 'STOKEN')]) {
+        writeFile file: 'notify_slack.py', text: """
+import json, urllib.request, os
+payload = json.dumps({"channel": "#deployments", "text": os.environ["SLACK_MSG"]}).encode()
+urllib.request.urlopen(urllib.request.Request(
+    "https://slack.com/api/chat.postMessage",
+    data=payload,
+    headers={
+        "Authorization": "Bearer " + os.environ["STOKEN"],
+        "Content-Type": "application/json"
+    }
+))
+print("Slack notified")
+"""
+        withEnv(["SLACK_MSG=${msg}"]) {
+            sh 'python3 notify_slack.py'
         }
     }
 }

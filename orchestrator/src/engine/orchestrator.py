@@ -144,6 +144,16 @@ class Orchestrator:
         finally:
             OPERATIONS_IN_FLIGHT.labels(intent.action.value).dec()
 
+    def _use_ec2(self, service: str | None) -> bool:
+        if self.ec2 is None:
+            return False
+        static = {"ec2", "server", None, ""}
+        return (
+            service in static
+            or service == self.ec2.target_name
+            or self.k8s is None
+        )
+
     async def _dispatch(self, intent: CommandIntent, tracking_id: UUID) -> str:
         action = intent.action
         if action == Action.BUILD:
@@ -160,10 +170,7 @@ class Orchestrator:
             return f"queued:{result.queue_item}"
 
         if action == Action.DEPLOY:
-            ec2_targets = {"ec2", "hello-cicd", "server", None, ""}
-            use_ec2 = self.ec2 is not None and (
-                intent.service in ec2_targets or self.k8s is None
-            )
+            use_ec2 = self._use_ec2(intent.service)
             if use_ec2:
                 msg = await self.ec2.deploy(intent.version or "latest", intent.requester_id)
                 await self.slack.post_text(intent.channel_id, msg)
@@ -178,10 +185,7 @@ class Orchestrator:
             return rollout.status
 
         if action == Action.STATUS:
-            ec2_targets = {"ec2", "hello-cicd", "server", None, ""}
-            use_ec2 = self.ec2 is not None and (
-                intent.service in ec2_targets or self.k8s is None
-            )
+            use_ec2 = self._use_ec2(intent.service)
             if use_ec2:
                 report = await self.ec2.get_health()
                 await self.slack.post_ec2_status_card(intent.channel_id, report)
@@ -196,10 +200,7 @@ class Orchestrator:
             return f"ready:{status.ready_replicas}/{status.desired_replicas}"
 
         if action == Action.ROLLBACK:
-            ec2_targets = {"ec2", "hello-cicd", "server", None, ""}
-            use_ec2 = self.ec2 is not None and (
-                intent.service in ec2_targets or self.k8s is None
-            )
+            use_ec2 = self._use_ec2(intent.service)
             if use_ec2:
                 msg = await self.ec2.rollback(intent.requester_id, intent.version or "")
                 await self.slack.post_text(intent.channel_id, msg)
@@ -213,10 +214,7 @@ class Orchestrator:
             return msg
 
         if action == Action.LOGS:
-            ec2_targets = {"ec2", "hello-cicd", "server", None, ""}
-            use_ec2 = self.ec2 is not None and (
-                intent.service in ec2_targets or self.k8s is None
-            )
+            use_ec2 = self._use_ec2(intent.service)
             if use_ec2:
                 svc = intent.service or self.ec2.service_name
                 logs = await self.ec2.get_logs(svc)
