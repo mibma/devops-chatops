@@ -201,7 +201,7 @@ class Orchestrator:
                 intent.service in ec2_targets or self.k8s is None
             )
             if use_ec2:
-                msg = await self.ec2.rollback(intent.requester_id)
+                msg = await self.ec2.rollback(intent.requester_id, intent.version or "")
                 await self.slack.post_text(intent.channel_id, msg)
                 return msg
             assert self.k8s, "Kubernetes adapter not configured"

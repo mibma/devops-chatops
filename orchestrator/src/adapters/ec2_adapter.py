@@ -235,16 +235,25 @@ class EC2Adapter:
                 f"git -C {self.app_dir} rev-parse --is-inside-work-tree 2>/dev/null && echo yes || echo no",
                 timeout=10,
             )
-            pull_out = ""
+            git_out = ""
             if has_git.strip() == "yes":
-                pull_out = self._run(client, f"git -C {self.app_dir} pull origin main 2>&1", timeout=30)
+                if version in ("latest", "main", "master", ""):
+                    git_out = self._run(
+                        client, f"git -C {self.app_dir} pull origin main 2>&1", timeout=30,
+                    )
+                else:
+                    git_out = self._run(
+                        client,
+                        f"git -C {self.app_dir} fetch --all 2>&1 && git -C {self.app_dir} checkout {version} 2>&1",
+                        timeout=30,
+                    )
             restart_out = self._run(
                 client, f"sudo systemctl restart {self.service_name} 2>&1", timeout=15,
             )
-            lines = [f":rocket: Deployed `{self.target_name}` (v`{version}`) by <@{requester}>"]
-            if pull_out:
-                lines.append(f"```{pull_out[:300]}```")
-            lines.append(f"Service restart: `{restart_out or 'ok'}`")
+            lines = [f":rocket: Deployed `{self.target_name}` → `{version}` by <@{requester}>"]
+            if git_out:
+                lines.append(f"```{git_out[:300]}```")
+            lines.append(f"`{self.service_name}` restarted: `{restart_out or 'ok'}`")
             return "\n".join(lines)
         finally:
             client.close()
@@ -265,21 +274,31 @@ class EC2Adapter:
         finally:
             client.close()
 
-    async def rollback(self, requester: str) -> str:
+    async def rollback(self, requester: str, version: str = "") -> str:
         if not (self.ssh_host and self.ssh_user and self.ssh_key_path):
             raise RuntimeError("SSH not configured — set EC2_SSH_HOST, EC2_SSH_USER, EC2_SSH_KEY_PATH")
-        return await asyncio.to_thread(self._rollback_sync, requester)
+        return await asyncio.to_thread(self._rollback_sync, requester, version)
 
-    def _rollback_sync(self, requester: str) -> str:
+    def _rollback_sync(self, requester: str, version: str) -> str:
         client = self._connect_ssh(timeout=15)
         try:
+            if version:
+                self._run(client, f"git -C {self.app_dir} fetch --all 2>&1", timeout=20)
+                out = self._run(client, f"git -C {self.app_dir} checkout {version} 2>&1", timeout=15)
+                self._run(client, f"sudo systemctl restart {self.service_name} 2>&1", timeout=15)
+                return f":rewind: Rolled back `{self.target_name}` → `{version}` by <@{requester}>\n```{out[:200]}```"
+
             prev = self._run(
                 client,
                 f"git -C {self.app_dir} log --format='%H' 2>/dev/null | sed -n '2p'",
                 timeout=10,
             )
             if not prev or len(prev) < 7:
-                return ":warning: No previous git commit found — cannot rollback"
+                return (
+                    ":warning: No previous git commit found.\n"
+                    "Specify a version explicitly: `/rollback service=hello-cicd version=v1.0.0`\n"
+                    "Or check `EC2_APP_DIR` in your `.env` — it must point to the git repo on the remote server."
+                )
             self._run(client, f"git -C {self.app_dir} checkout {prev} 2>&1", timeout=20)
             self._run(client, f"sudo systemctl restart {self.service_name} 2>&1", timeout=15)
             return f":rewind: Rolled back `{self.target_name}` to `{prev[:8]}` by <@{requester}>"
