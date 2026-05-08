@@ -36,6 +36,7 @@ services:
       EC2_SSH_USER: ${EC2_SSH_USER:-}
       EC2_SSH_KEY_PATH: ${EC2_SSH_KEY_PATH:-}
       EC2_SERVICE_NAME: ${EC2_SERVICE_NAME:-nginx}
+      EC2_APP_DIR: ${EC2_APP_DIR:-~/app}
     volumes:
       - ~/.kube:/kube:ro
       - ./config:/app/config:ro
