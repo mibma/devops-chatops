@@ -268,6 +268,24 @@ class EC2Adapter:
         finally:
             client.close()
 
+    async def restart(self, requester: str) -> str:
+        if not (self.ssh_host and self.ssh_user and self.ssh_key_path):
+            raise RuntimeError("SSH not configured — set EC2_SSH_HOST, EC2_SSH_USER, EC2_SSH_KEY_PATH")
+        return await asyncio.to_thread(self._restart_sync, requester)
+
+    def _restart_sync(self, requester: str) -> str:
+        client = self._connect_ssh(timeout=10)
+        try:
+            out = self._run(client, f"sudo systemctl restart {self.service_name} 2>&1", timeout=15)
+            status = self._run(client, f"systemctl is-active {self.service_name}", timeout=5)
+            return (
+                f":arrows_counterclockwise: Restarted `{self.service_name}` on `{self.target_name}` "
+                f"by <@{requester}> — status: *{status}*"
+                + (f"\n```{out[:200]}```" if out else "")
+            )
+        finally:
+            client.close()
+
     async def get_logs(self, service: str, lines: int = 50) -> str:
         if not (self.ssh_host and self.ssh_user and self.ssh_key_path):
             raise RuntimeError("SSH not configured — set EC2_SSH_HOST, EC2_SSH_USER, EC2_SSH_KEY_PATH")

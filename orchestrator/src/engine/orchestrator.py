@@ -237,7 +237,13 @@ class Orchestrator:
             raise NotImplementedError("SCALE action not wired yet")
 
         if action == Action.RESTART:
-            raise NotImplementedError("RESTART action not wired yet")
+            use_ec2 = self._use_ec2(intent.service)
+            if use_ec2:
+                assert self.ec2, "EC2 adapter not configured"
+                msg = await self.ec2.restart(intent.requester_id)
+                await self.slack.post_text(intent.channel_id, msg)
+                return "ec2-restart:ok"
+            raise NotImplementedError("RESTART not wired for Kubernetes")
 
         if action == Action.METRICS:
             stats = await self.db.get_deployment_stats(hours=24)
