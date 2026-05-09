@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 from uuid import UUID
 
 from slack_sdk.web.async_client import AsyncWebClient
@@ -96,6 +97,85 @@ class SlackNotifier:
     async def post_logs(self, channel: str, pod_name: str, logs: str) -> None:
         snippet = logs[-2800:] if len(logs) > 2800 else logs
         await self.post_text(channel, f":scroll: Logs for `{pod_name}`:\n```\n{snippet}\n```")
+
+    async def post_ops_card(self, channel: str, snap: dict) -> None:
+        def _fmt(v: float | None, suffix: str = "", decimals: int = 1) -> str:
+            return "n/a" if v is None else f"{v:.{decimals}f}{suffix}"
+
+        lines = [":zap: *Real-time Ops Pulse* (Prometheus — last 5m/1h)"]
+        lines.append(f"• In-flight operations right now: *{_fmt(snap.get('in_flight'), decimals=0)}*")
+        lines.append(f"• Commands/min (last 5 min): *{_fmt(snap.get('cmd_per_min'), '/min')}*")
+        lines.append(f"• p95 operation time (last 1h): *{_fmt(snap.get('p95_seconds'), 's')}*")
+        lines.append(f"• Failed ops rate (last 1h): *{_fmt(snap.get('errors_per_min'), '/min')}*")
+        lines.append(f"• Permission denials (last 1h): *{_fmt(snap.get('denials_per_min'), '/min')}*")
+        lines.append(f"• Jenkins build queue depth: *{_fmt(snap.get('jenkins_queue'), decimals=0)}*")
+        await self.post_text(channel, "\n".join(lines))
+
+    async def post_metrics_card(self, channel: str, stats: dict) -> None:
+        hours = stats.get("hours", 24)
+        rows = stats.get("rows", [])
+        unique_users = stats.get("unique_users", 0)
+
+        if not rows:
+            await self.post_text(channel, f":bar_chart: No commands recorded in the last {hours}h.")
+            return
+
+        by_action: dict = defaultdict(dict)
+        for r in rows:
+            by_action[r["action"]][r["outcome"]] = r
+
+        lines = [f":bar_chart: *Deployment Dashboard — Last {hours}h*"]
+        total = sum(r["count"] for r in rows)
+        lines.append(f"• Total commands: *{total}*  |  Unique users: *{unique_users}*")
+
+        for action, outcomes in sorted(by_action.items()):
+            executed = outcomes.get("EXECUTED", {}).get("count", 0)
+            failed   = outcomes.get("FAILED",   {}).get("count", 0)
+            denied   = outcomes.get("DENIED",   {}).get("count", 0)
+            total_a  = executed + failed + denied
+            rate     = f"{executed / total_a * 100:.0f}%" if total_a else "n/a"
+
+            avg_ms = outcomes.get("EXECUTED", {}).get("avg_ms")
+            min_ms = outcomes.get("EXECUTED", {}).get("min_ms")
+            max_ms = outcomes.get("EXECUTED", {}).get("max_ms")
+            timing = ""
+            if avg_ms is not None:
+                timing = (
+                    f" | avg {avg_ms/1000:.0f}s"
+                    f" (min {(min_ms or 0)/1000:.0f}s"
+                    f" / max {(max_ms or 0)/1000:.0f}s)"
+                )
+
+            parts = []
+            if executed:
+                parts.append(f":white_check_mark: {executed} ok")
+            if failed:
+                parts.append(f":x: {failed} failed")
+            if denied:
+                parts.append(f":no_entry: {denied} denied")
+
+            lines.append(
+                f"• *{action}*: {' / '.join(parts)} — *{rate} success*{timing}"
+            )
+
+        await self.post_text(channel, "\n".join(lines))
+
+    async def post_incidents_card(self, channel: str, incidents: list[dict]) -> None:
+        if not incidents:
+            await self.post_text(channel, ":white_check_mark: No recent failures — all clear.")
+            return
+
+        lines = [f":rotating_light: *Recent Incidents (last {len(incidents)} failures)*"]
+        for i, inc in enumerate(incidents, 1):
+            ts = inc["timestamp"].strftime("%Y-%m-%d %H:%M") if inc.get("timestamp") else "unknown"
+            action  = inc.get("action", "?")
+            service = inc.get("service") or ""
+            user_id = inc.get("user_id", "?")
+            detail  = (inc.get("outcome_detail") or "no detail")[:100]
+            svc     = f" `{service}`" if service else ""
+            lines.append(f"{i}. [{ts}] *{action}*{svc} by <@{user_id}> — _{detail}_")
+
+        await self.post_text(channel, "\n".join(lines))
 
     async def post_ec2_status_card(self, channel: str, report: EC2HealthReport) -> None:
         emoji = ":large_green_circle:" if report.healthy else ":red_circle:"

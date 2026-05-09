@@ -62,6 +62,14 @@ class CommandParser:
             action = Action.RESTART
         elif any(w in text for w in ["scale", "replicas", "instances"]):
             action = Action.SCALE
+        elif any(w in text for w in ["metrics", "stats", "statistics", "dashboard", "kpi"]):
+            action = Action.METRICS
+        elif any(w in text for w in ["incident", "incidents", "failures", "errors", "alerts"]):
+            action = Action.INCIDENTS
+        elif any(w in text for w in ["capacity", "resources", "disk", "memory", "cpu", "load"]):
+            action = Action.CAPACITY
+        elif any(w in text for w in ["ops", "realtime", "live", "inflight", "pulse", "prometheus"]):
+            action = Action.OPS
 
         service = self._extract_service(text)
         environment = next((e for e in self.ENV_KEYWORDS if e in text.split()), None)

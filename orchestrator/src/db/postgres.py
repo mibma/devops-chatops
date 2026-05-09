@@ -132,3 +132,51 @@ class Postgres:
                 tracking_id,
             )
             return dict(row) if row else None
+
+    async def get_deployment_stats(self, hours: int = 24) -> dict:
+        if not self.available:
+            return {"hours": hours, "rows": [], "unique_users": 0}
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT action, outcome,
+                       COUNT(*)::int                   AS count,
+                       AVG(duration_ms)::int           AS avg_ms,
+                       MIN(duration_ms)::int           AS min_ms,
+                       MAX(duration_ms)::int           AS max_ms
+                FROM audit_log
+                WHERE timestamp > NOW() - make_interval(hours => $1)
+                GROUP BY action, outcome
+                ORDER BY action, outcome
+                """,
+                hours,
+            )
+            unique_users = await conn.fetchval(
+                """
+                SELECT COUNT(DISTINCT user_id)
+                FROM audit_log
+                WHERE timestamp > NOW() - make_interval(hours => $1)
+                """,
+                hours,
+            )
+        return {
+            "hours": hours,
+            "rows": [dict(r) for r in rows],
+            "unique_users": int(unique_users or 0),
+        }
+
+    async def get_recent_incidents(self, limit: int = 10) -> list[dict]:
+        if not self.available:
+            return []
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, action, service, outcome_detail, timestamp
+                FROM audit_log
+                WHERE outcome = 'FAILED'
+                ORDER BY timestamp DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+        return [dict(r) for r in rows]

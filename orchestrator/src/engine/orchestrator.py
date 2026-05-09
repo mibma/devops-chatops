@@ -22,6 +22,7 @@ from ..monitoring.metrics import (
 from ..notifications.slack_notifier import SlackNotifier
 from .command_parser import CommandParser
 from .permission_checker import PermissionChecker
+from ..monitoring.prometheus_querier import PrometheusQuerier
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class Orchestrator:
         docker: DockerAdapter | None,
         k8s: KubernetesAdapter | None,
         ec2: EC2Adapter | None = None,
+        prometheus: PrometheusQuerier | None = None,
     ):
         self.parser = parser
         self.permissions = permissions
@@ -48,6 +50,7 @@ class Orchestrator:
         self.docker = docker
         self.k8s = k8s
         self.ec2 = ec2
+        self.prometheus = prometheus
 
     async def execute(
         self,
@@ -235,6 +238,29 @@ class Orchestrator:
 
         if action == Action.RESTART:
             raise NotImplementedError("RESTART action not wired yet")
+
+        if action == Action.METRICS:
+            stats = await self.db.get_deployment_stats(hours=24)
+            await self.slack.post_metrics_card(intent.channel_id, stats)
+            total = sum(r["count"] for r in stats.get("rows", []))
+            return f"metrics:ok rows={total}"
+
+        if action == Action.INCIDENTS:
+            incidents = await self.db.get_recent_incidents(limit=10)
+            await self.slack.post_incidents_card(intent.channel_id, incidents)
+            return f"incidents:{len(incidents)}"
+
+        if action == Action.CAPACITY:
+            assert self.ec2, "EC2 adapter not configured (set EC2_SSH_HOST in .env)"
+            report = await self.ec2.get_health()
+            await self.slack.post_ec2_status_card(intent.channel_id, report)
+            return f"capacity:ok ssh={bool(report.ssh_checks)}"
+
+        if action == Action.OPS:
+            assert self.prometheus, "Prometheus not configured (add prometheus service to docker-compose)"
+            snap = await self.prometheus.get_ops_snapshot()
+            await self.slack.post_ops_card(intent.channel_id, snap)
+            return f"ops:ok in_flight={snap.get('in_flight')}"
 
         if action == Action.HELP:
             await self.slack.post_text(

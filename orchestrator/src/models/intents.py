@@ -12,6 +12,10 @@ class Action(str, Enum):
     RESTART = "RESTART"
     SCALE = "SCALE"
     HELP = "HELP"
+    METRICS = "METRICS"
+    INCIDENTS = "INCIDENTS"
+    CAPACITY = "CAPACITY"
+    OPS = "OPS"
 
 
 @dataclass

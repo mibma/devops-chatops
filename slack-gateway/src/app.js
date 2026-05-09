@@ -74,8 +74,9 @@ function registerCommand(slashName, action) {
       }
 
       const result = await forwardToOrchestrator(action, command);
-      const ackText = action === 'STATUS'
-        ? `:mag: Checking ${action.toLowerCase()}... (tracking \`${result.tracking_id}\`) — full report will be posted in this channel.`
+      const monitorActions = new Set(['STATUS', 'METRICS', 'INCIDENTS', 'CAPACITY']);
+      const ackText = monitorActions.has(action)
+        ? `:mag: Fetching ${action.toLowerCase()}... (tracking \`${result.tracking_id}\`) — report will be posted here shortly.`
         : `:rocket: ${action} request received. Tracking ID: \`${result.tracking_id}\``;
       await respond({
         response_type: 'in_channel',
@@ -97,6 +98,10 @@ registerCommand('/rollback', 'ROLLBACK');
 registerCommand('/logs', 'LOGS');
 registerCommand('/restart', 'RESTART');
 registerCommand('/scale', 'SCALE');
+registerCommand('/metrics', 'METRICS');
+registerCommand('/incidents', 'INCIDENTS');
+registerCommand('/capacity', 'CAPACITY');
+registerCommand('/ops', 'OPS');
 
 if (app) {
   app.action(/^approve_(.+)$/, async ({ action, ack, body, respond }) => {

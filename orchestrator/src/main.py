@@ -18,6 +18,7 @@ from .engine.command_parser import CommandParser
 from .engine.orchestrator import Orchestrator
 from .engine.permission_checker import PermissionChecker
 from .models.intents import Action
+from .monitoring.prometheus_querier import PrometheusQuerier
 from .notifications.slack_notifier import SlackNotifier
 from .utils.logger import configure_logging
 
@@ -66,6 +67,11 @@ def _build_k8s() -> KubernetesAdapter | None:
     except Exception:  # noqa: BLE001
         log.warning("Kubernetes adapter unavailable; running without cluster access")
         return None
+
+
+def _build_prometheus() -> PrometheusQuerier | None:
+    url = getattr(settings, "prometheus_url", None) or "http://prometheus:9090"
+    return PrometheusQuerier(base_url=url)
 
 
 def _build_ec2() -> EC2Adapter | None:
@@ -118,6 +124,7 @@ async def lifespan(app: FastAPI):
     docker_ = _build_docker()
     k8s = _build_k8s()
     ec2 = _build_ec2()
+    prom = _build_prometheus()
 
     app.state.orch = Orchestrator(
         parser=parser,
@@ -129,6 +136,7 @@ async def lifespan(app: FastAPI):
         docker=docker_,
         k8s=k8s,
         ec2=ec2,
+        prometheus=prom,
     )
     app.state.redis = redis_client
 

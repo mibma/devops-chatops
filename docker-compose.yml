@@ -63,6 +63,19 @@ services:
       - "6379:6379"
     command: redis-server --appendonly yes
 
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+    depends_on:
+      - orchestrator
+
   adminer:
     image: adminer:latest
     ports:
@@ -72,3 +85,4 @@ services:
 
 volumes:
   postgres_data:
+  prometheus_data:
