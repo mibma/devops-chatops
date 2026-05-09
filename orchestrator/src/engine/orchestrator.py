@@ -271,7 +271,17 @@ class Orchestrator:
         if action == Action.HELP:
             await self.slack.post_text(
                 intent.channel_id,
-                "Available commands: /deploy /build /status /rollback /logs /restart /scale",
+                "*Available commands:*\n"
+                "• `/deploy` — deploy EC2 app (`version=v1.2`)\n"
+                "• `/build` — trigger Jenkins CI build\n"
+                "• `/status-check` — EC2 health (HTTP + AWS + SSH)\n"
+                "• `/rollback` — revert to previous commit (`version=v1.1`)\n"
+                "• `/logs` — tail last 50 lines of nginx logs\n"
+                "• `/restart` — restart nginx on EC2\n"
+                "• `/metrics` — 24h deployment dashboard (success rate, avg time)\n"
+                "• `/incidents` — last 10 deployment failures\n"
+                "• `/capacity` — EC2 disk, memory, load snapshot\n"
+                "• `/ops` — real-time ops pulse from Prometheus",
             )
             return "help"
 

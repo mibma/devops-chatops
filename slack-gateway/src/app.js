@@ -102,6 +102,7 @@ registerCommand('/metrics', 'METRICS');
 registerCommand('/incidents', 'INCIDENTS');
 registerCommand('/capacity', 'CAPACITY');
 registerCommand('/ops', 'OPS');
+registerCommand('/help', 'HELP');
 
 if (app) {
   app.action(/^approve_(.+)$/, async ({ action, ack, body, respond }) => {
