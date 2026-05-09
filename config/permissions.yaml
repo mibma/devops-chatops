@@ -1,39 +1,23 @@
 default_roles:
-  - developer
+  - viewer
 
 permissions:
-  developer:
-    allowed_actions:
-      - BUILD
-      - DEPLOY
-      - STATUS
-      - LOGS
-      - ROLLBACK
-      - HELP
-    allowed_environments:
-      - development
-      - staging
-      - production
 
-  devops-lead:
+  admin:
+    allowed_actions: ["*"]
+    allowed_environments: ["*"]
+
+  viewer:
     allowed_actions:
       - BUILD
-      - DEPLOY
       - STATUS
       - LOGS
       - RESTART
-      - SCALE
       - HELP
-    allowed_environments:
-      - development
-      - staging
-      - production
-    requires_approval:
-      - action: ROLLBACK
-        environment: production
-
-  sre-on-call:
-    allowed_actions: ["*"]
+      - METRICS
+      - INCIDENTS
+      - CAPACITY
+      - OPS
     allowed_environments: ["*"]
 
 approval_channels:
