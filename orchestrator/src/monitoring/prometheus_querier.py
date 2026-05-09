@@ -30,7 +30,7 @@ class PrometheusQuerier:
 
     async def get_ops_snapshot(self) -> dict:
         """Run all monitoring queries concurrently and return a labelled dict."""
-        in_flight, cmd_rate, p95, err_rate, denial_rate, jenkins_q = await asyncio.gather(
+        in_flight, cmd_rate, p95, err_rate, denial_rate = await asyncio.gather(
             self._query("sum(chatops_operations_in_flight)"),
             self._query("sum(rate(chatops_commands_total[5m])) * 60"),
             self._query(
@@ -39,7 +39,6 @@ class PrometheusQuerier:
             ),
             self._query('sum(rate(chatops_commands_total{outcome="FAILED"}[1h])) * 60'),
             self._query("sum(rate(chatops_permission_denials_total[1h])) * 60"),
-            self._query("chatops_jenkins_queue_depth"),
         )
         return {
             "in_flight":      in_flight,
@@ -47,5 +46,4 @@ class PrometheusQuerier:
             "p95_seconds":    p95,
             "errors_per_min": err_rate,
             "denials_per_min": denial_rate,
-            "jenkins_queue":  jenkins_q,
         }

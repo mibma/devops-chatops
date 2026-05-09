@@ -108,7 +108,6 @@ class SlackNotifier:
         lines.append(f"• p95 operation time (last 1h): *{_fmt(snap.get('p95_seconds'), 's')}*")
         lines.append(f"• Failed ops rate (last 1h): *{_fmt(snap.get('errors_per_min'), '/min')}*")
         lines.append(f"• Permission denials (last 1h): *{_fmt(snap.get('denials_per_min'), '/min')}*")
-        lines.append(f"• Jenkins build queue depth: *{_fmt(snap.get('jenkins_queue'), decimals=0)}*")
         await self.post_text(channel, "\n".join(lines))
 
     async def post_metrics_card(self, channel: str, stats: dict) -> None:
