@@ -24,7 +24,7 @@ services:
       JENKINS_USER: ${JENKINS_USER}
       JENKINS_TOKEN: ${JENKINS_TOKEN}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
-      KUBECONFIG: /kube/config
+      KUBECONFIG: /app/keys/k3s.yaml
       PERMISSIONS_FILE: /app/config/permissions.yaml
       EC2_TARGET_NAME: ${EC2_TARGET_NAME:-demo-devops-project}
       EC2_HTTP_URL: ${EC2_HTTP_URL:-}

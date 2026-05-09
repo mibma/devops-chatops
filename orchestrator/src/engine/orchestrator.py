@@ -234,7 +234,24 @@ class Orchestrator:
             return f"logs:{pods[0].name}"
 
         if action == Action.SCALE:
-            raise NotImplementedError("SCALE action not wired yet")
+            if self.k8s is None:
+                await self.slack.post_text(
+                    intent.channel_id,
+                    ":warning: `/scale` requires Kubernetes — EC2 runs a single nginx process and cannot be scaled this way.",
+                )
+                return "scale:no-k8s"
+            if intent.replicas is None:
+                await self.slack.post_text(
+                    intent.channel_id,
+                    ":warning: Specify replica count: `/scale service=web-app replicas=3`",
+                )
+                return "scale:no-replicas"
+            namespace = intent.namespace or intent.environment or "default"
+            msg = await self.k8s.scale_deployment(
+                intent.service or "", namespace, intent.replicas, intent.requester_id,
+            )
+            await self.slack.post_text(intent.channel_id, f":straight_ruler: {msg}")
+            return f"scale:{intent.replicas}"
 
         if action == Action.RESTART:
             use_ec2 = self._use_ec2(intent.service)
@@ -281,6 +298,7 @@ class Orchestrator:
                 "• `/metrics` — 24h deployment dashboard (success rate, avg time)\n"
                 "• `/incidents` — last 10 deployment failures\n"
                 "• `/capacity` — EC2 disk, memory, load snapshot\n"
+                "• `/scale` — scale K8s replicas (`service=web-app replicas=3`)\n"
                 "• `/ops` — real-time ops pulse from Prometheus",
             )
             return "help"

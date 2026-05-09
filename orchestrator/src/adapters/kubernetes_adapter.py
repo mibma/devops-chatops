@@ -148,6 +148,31 @@ class KubernetesAdapter:
 
         return f"Rollback initiated for {deployment_name} in {namespace}"
 
+    async def scale_deployment(
+        self,
+        deployment_name: str,
+        namespace: str,
+        replicas: int,
+        requester: str,
+    ) -> str:
+        loop = asyncio.get_event_loop()
+        patch_body = {
+            "metadata": {
+                "annotations": {
+                    "chatops.io/last-scale-by": requester,
+                    "chatops.io/last-scale-at": datetime.utcnow().isoformat(),
+                }
+            },
+            "spec": {"replicas": replicas},
+        }
+        await loop.run_in_executor(
+            None,
+            lambda: self.apps_v1.patch_namespaced_deployment(
+                deployment_name, namespace, patch_body
+            ),
+        )
+        return f"Scaled `{deployment_name}` in `{namespace}` to *{replicas}* replica(s) by <@{requester}>"
+
     async def get_pod_list(
         self,
         namespace: str,
